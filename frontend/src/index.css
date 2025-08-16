@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Modern WebRTC Video Calling Design System 
+Dark theme with vibrant accent colors for professional video conferencing
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 215 28% 9%;
+    --foreground: 213 31% 91%;
+
+    --card: 215 25% 12%;
+    --card-foreground: 213 31% 91%;
+
+    --popover: 215 25% 12%;
+    --popover-foreground: 213 31% 91%;
+
+    --primary: 210 98% 55%;
+    --primary-foreground: 215 28% 9%;
+
+    --secondary: 215 20% 18%;
+    --secondary-foreground: 213 31% 91%;
+
+    --muted: 215 20% 15%;
+    --muted-foreground: 217 14% 65%;
+
+    --accent: 142 84% 55%;
+    --accent-foreground: 215 28% 9%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 213 31% 91%;
+
+    --warning: 45 93% 58%;
+    --warning-foreground: 215 28% 9%;
+
+    --border: 215 20% 20%;
+    --input: 215 20% 18%;
+    --ring: 210 98% 55%;
+
+    --radius: 0.75rem;
+
+    /* Video call specific tokens */
+    --video-bg: 215 25% 8%;
+    --video-controls: 215 20% 15%;
+    --video-controls-hover: 215 20% 22%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(210 98% 55%), hsl(195 85% 60%));
+    --gradient-accent: linear-gradient(135deg, hsl(142 84% 55%), hsl(120 75% 50%));
+    --gradient-card: linear-gradient(145deg, hsl(215 25% 12%), hsl(215 20% 15%));
+    
+    /* Shadows */
+    --shadow-primary: 0 10px 30px -5px hsl(210 98% 55% / 0.3);
+    --shadow-card: 0 8px 32px -8px hsl(215 28% 9% / 0.4);
+    --shadow-video: 0 4px 24px -4px hsl(215 28% 9% / 0.6);
+    
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
