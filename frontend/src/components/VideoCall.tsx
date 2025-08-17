@@ -35,17 +35,18 @@ export const VideoCall = ({
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
- useEffect(() => {
-  if (localVideoRef.current && callState.localStream) {
-    (localVideoRef.current as HTMLVideoElement).srcObject = callState.localStream;
-  }
-}, [callState.localStream]);
+  useEffect(() => {
+    if (localVideoRef.current && callState.localStream) {
+      (localVideoRef.current as HTMLVideoElement).srcObject = callState.localStream;
+    }
+  }, [callState.localStream]);
 
   useEffect(() => {
-  if (remoteVideoRef.current && callState.remoteStream) {
-    (remoteVideoRef.current as HTMLVideoElement).srcObject = callState.remoteStream;
-  }
-}, [callState.remoteStream]);
+    if (remoteVideoRef.current && callState.remoteStream) {
+      (remoteVideoRef.current as HTMLVideoElement).srcObject = callState.remoteStream;
+    }
+  }, [callState.remoteStream]);
+
   const getConnectionStatusColor = () => {
     switch (callState.connectionState.connection) {
       case 'connected':
@@ -127,7 +128,14 @@ export const VideoCall = ({
               </div>
               
               {/* Local Video Picture-in-Picture */}
-              <div className="absolute bottom-4 right-4 w-48 h-36 bg-card border border-border rounded-lg overflow-hidden shadow-lg">
+              <div 
+                className="
+                  absolute bottom-3 right-3 
+                  w-1/3 max-w-[180px] aspect-video 
+                  bg-card border border-border rounded-lg overflow-hidden shadow-lg
+                  sm:w-48 sm:h-36
+                "
+              >
                 {callState.localStream ? (
                   <video
                     ref={localVideoRef}
@@ -145,7 +153,7 @@ export const VideoCall = ({
             </Card>
 
             {/* Controls */}
-            <div className="flex justify-center gap-3">
+            <div className="flex justify-center gap-3 flex-wrap mt-3">
               <Button
                 onClick={onToggleAudio}
                 variant={callState.isAudioMuted ? "destructive" : "secondary"}

@@ -292,7 +292,7 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
 
   const joinRoom = useCallback(async (email: string, roomId: string) => {
     emailRef.current = email;
-    roomRef.current = roomId;
+    
 
     // Create Peer
     const pc = createPeer();
