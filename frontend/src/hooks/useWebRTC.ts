@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CallState, ConnectionState, WebSocketMessage } from '@/types/webrtc';
 
-const WS_URL = 'https://webrtc-peertopeer-connection-1.onrender.com/signal'; // change to your server origin in prod
+const WS_URL = 'ws://webrtc-peertopeer-connection-1.onrender.com/signal'; // change to your server origin in prod
 const CHUNK_SIZE = 64 * 1024; // 64KB - safe default across browsers
 
 type ProgressMap = { [fileName: string]: number };
