@@ -3,6 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CallState, ConnectionState, WebSocketMessage } from '@/types/webrtc';
 
 const WS_URL = 'wss://webrtc-peertopeer-connection-1.onrender.com/signal'; // change to your server origin in prod
+const ws = new WebSocket(WS_URL);
+
+ws.onopen = () => console.log("✅ Connected to signaling server");
+ws.onerror = (err) => console.error("❌ WebSocket error:", err);
+ws.onclose = () => console.warn("⚠️ WebSocket closed");
+ws.onmessage = (msg) => console.log("📩 Message from server:", msg.data);
+
 const CHUNK_SIZE = 64 * 1024; // 64KB - safe default across browsers
 
 type ProgressMap = { [fileName: string]: number };
