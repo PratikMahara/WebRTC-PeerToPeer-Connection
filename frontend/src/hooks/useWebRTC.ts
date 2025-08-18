@@ -2,9 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CallState, ConnectionState, WebSocketMessage } from '@/types/webrtc';
 
-const WS_URL = 'wss://webrtc-peertopeer-connection-1.onrender.com/signal'; // change to your server origin in prod
-
-
+const WS_URL = 'wss://webrtc-peertopeer-connection-1.onrender.com/signal';
 const CHUNK_SIZE = 64 * 1024; // 64KB - safe default across browsers
 
 type ProgressMap = { [fileName: string]: number };
@@ -18,9 +16,10 @@ type UseWebRTC = {
   sendFiles: (files: FileList) => void;
   fileProgress: ProgressMap;
   incomingFiles: ProgressMap;
+  isConnecting: boolean;
 };
+
 function comparePoliteness(a: string, b: string) {
-  // deterministic role: "polite" if your id/email sorts higher
   return a.localeCompare(b) > 0;
 }
 
@@ -43,7 +42,8 @@ export function useWebRTC(): UseWebRTC {
 
   const [fileProgress, setFileProgress] = useState<ProgressMap>({});
   const [incomingFiles, setIncomingFiles] = useState<ProgressMap>({});
-const [isConnecting, setIsConnecting] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
@@ -51,34 +51,44 @@ const [isConnecting, setIsConnecting] = useState(false);
   const roomRef = useRef<string>('');
   const remoteIdRef = useRef<string>('');
 
-  // Receiving file assembly buffers keyed by fileName
- const receiveBuffersRef = useRef<{ [fileName: string]: ArrayBuffer[] }>({});
-const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received: number } }>({});
+  const receiveBuffersRef = useRef<{ [fileName: string]: ArrayBuffer[] }>({});
+  const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received: number } }>({});
 
   const updateConnState = useCallback(() => {
     const pc = pcRef.current;
     if (!pc) return;
+    
+    const newState = {
+      ice: pc.iceConnectionState,
+      connection: pc.connectionState,
+      gathering: pc.iceGatheringState,
+    };
+
+    console.log('Connection state update:', newState);
     setCallState((s) => ({
       ...s,
-      connectionState: {
-        ice: pc.iceConnectionState,
-        connection: pc.connectionState,
-        gathering: pc.iceGatheringState,
-      },
+      connectionState: newState,
     }));
   }, []);
 
   const closeConnections = useCallback(() => {
-    try { dcRef.current?.close(); } catch {}
-    try { pcRef.current?.getSenders().forEach(s => { try { s.track?.stop(); } catch {} }); } catch {}
-    try { pcRef.current?.close(); } catch {}
-    try { wsRef.current?.close(); } catch {}
+    console.log('Closing all connections');
+    try { dcRef.current?.close(); } catch (e) { console.error('Error closing data channel:', e); }
+    try { 
+      pcRef.current?.getSenders().forEach(s => { 
+        try { s.track?.stop(); } catch (e) { console.error('Error stopping sender track:', e); } 
+      }); 
+    } catch (e) { console.error('Error closing senders:', e); }
+    try { pcRef.current?.close(); } catch (e) { console.error('Error closing peer connection:', e); }
+    try { wsRef.current?.close(); } catch (e) { console.error('Error closing websocket:', e); }
+    
     dcRef.current = null;
     pcRef.current = null;
     wsRef.current = null;
   }, []);
 
   const createPeer = useCallback(() => {
+    console.log('Creating new RTCPeerConnection');
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -86,17 +96,30 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
       ],
     });
 
-    pc.oniceconnectionstatechange = updateConnState;
-    pc.onconnectionstatechange = updateConnState;
-    pc.onicegatheringstatechange = updateConnState;
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', pc.iceConnectionState);
+      updateConnState();
+    };
+    
+    pc.onconnectionstatechange = () => {
+      console.log('Peer connection state:', pc.connectionState);
+      updateConnState();
+    };
+    
+    pc.onicegatheringstatechange = () => {
+      console.log('ICE gathering state:', pc.iceGatheringState);
+      updateConnState();
+    };
 
     pc.ontrack = (e) => {
+      console.log('Received remote track:', e.track.kind);
       const [stream] = e.streams;
       setCallState((s) => ({ ...s, remoteStream: stream || null }));
     };
 
     pc.onicecandidate = (e) => {
-      if (e.candidate && wsRef.current && roomRef.current) {
+      console.log('ICE candidate:', e.candidate);
+      if (e.candidate && wsRef.current?.readyState === WebSocket.OPEN && roomRef.current) {
         const payload: WebSocketMessage = {
           type: 'ice-candidate',
           roomId: roomRef.current,
@@ -112,8 +135,8 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
       }
     };
 
-    // DataChannel (receiver side)
     pc.ondatachannel = (evt) => {
+      console.log('Data channel received:', evt.channel.label);
       const channel = evt.channel;
       wireDataChannel(channel);
     };
@@ -123,21 +146,30 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
   }, [updateConnState]);
 
   const wireDataChannel = (channel: RTCDataChannel) => {
+    console.log('Wiring data channel:', channel.label);
     dcRef.current = channel;
 
     channel.onopen = () => {
-      // ready to send
+      console.log('Data channel opened');
+    };
+
+    channel.onclose = () => {
+      console.log('Data channel closed');
+    };
+
+    channel.onerror = (err) => {
+      console.error('Data channel error:', err);
     };
 
     channel.onmessage = (event) => {
+      console.log('Data channel message received:', typeof event.data);
       const data = event.data;
 
-      // We send a JSON header first (meta), then raw ArrayBuffer chunks
-      // Distinguish by type
       if (typeof data === 'string') {
         try {
           const meta = JSON.parse(data);
           if (meta?.__fileMeta === true) {
+            console.log('Received file metadata:', meta);
             const { fileName, fileSize } = meta;
             receiveBuffersRef.current[fileName] = [];
             receiveMetaRef.current[fileName] = { fileSize, received: 0 };
@@ -145,12 +177,11 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
             return;
           }
         } catch {
-          // ignore non-json text
+          console.log('Non-file-meta text message:', data);
         }
       }
 
       if (data instanceof ArrayBuffer) {
-        // find the active file by looking for one whose received < fileSize
         const entries = Object.entries(receiveMetaRef.current);
         for (const [fileName, rec] of entries) {
           if (rec.received < rec.fileSize) {
@@ -161,7 +192,7 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
             setIncomingFiles((prev) => ({ ...prev, [fileName]: progress }));
 
             if (rec.received >= rec.fileSize) {
-              // assemble and download
+              console.log('File transfer complete:', fileName);
               const blob = new Blob(receiveBuffersRef.current[fileName]);
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
@@ -172,7 +203,6 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
               URL.revokeObjectURL(url);
               a.remove();
 
-              // cleanup
               delete receiveBuffersRef.current[fileName];
               delete receiveMetaRef.current[fileName];
 
@@ -196,8 +226,10 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
     if (!pc || !ws) return;
 
     try {
+      console.log('Making offer...');
       setCallState((s) => ({ ...s, makingOffer: true }));
       const offer = await pc.createOffer();
+      console.log('Created offer:', offer);
       await pc.setLocalDescription(offer);
 
       const payload: WebSocketMessage = {
@@ -207,12 +239,15 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
         sdp: offer.sdp,
       };
       ws.send(JSON.stringify(payload));
+    } catch (err) {
+      console.error('Error creating offer:', err);
     } finally {
       setCallState((s) => ({ ...s, makingOffer: false }));
     }
   }, []);
 
   const handleSignalMessage = useCallback(async (raw: any) => {
+    console.log('Received signaling message:', raw);
     const pc = pcRef.current;
     if (!pc) return;
 
@@ -220,17 +255,20 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
 
     switch (msg.type) {
       case 'user-joined': {
-        // Other peer joined; decide who is polite
+        console.log('Remote user joined:', msg.displayName);
         if (msg.displayName) remoteIdRef.current = msg.displayName;
-        setCallState((s) => ({ ...s, isPolite: comparePoliteness(emailRef.current, remoteIdRef.current) }));
-        // If *we* are the impolite one, proactively offer
-        if (!comparePoliteness(emailRef.current, remoteIdRef.current)) {
+        const isPolite = comparePoliteness(emailRef.current, remoteIdRef.current);
+        setCallState((s) => ({ ...s, isPolite }));
+        
+        if (!isPolite) {
+          console.log('We are impolite, making offer');
           await makeOfferIfNeeded();
         }
         break;
       }
 
       case 'offer': {
+        console.log('Received offer from peer');
         const offer = { type: 'offer' as const, sdp: msg.sdp! };
 
         const readyForOffer =
@@ -242,12 +280,13 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
         setCallState((s) => ({ ...s, ignoreOffer: offerCollision && !s.isPolite }));
 
         if (offerCollision && !callState.isPolite) {
-          // Ignore the offer
+          console.log('Ignoring offer due to collision');
           return;
         }
 
         await pc.setRemoteDescription(offer);
         const answer = await pc.createAnswer();
+        console.log('Created answer:', answer);
         await pc.setLocalDescription(answer);
 
         wsRef.current?.send(
@@ -262,17 +301,18 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
       }
 
       case 'answer': {
+        console.log('Received answer from peer');
         const answer = { type: 'answer' as const, sdp: msg.sdp! };
         await pc.setRemoteDescription(answer);
         break;
       }
 
       case 'ice-candidate': {
+        console.log('Received ICE candidate');
         if (msg.candidate?.candidate) {
           try {
             await pc.addIceCandidate(msg.candidate);
           } catch (err) {
-            // If we got an ice candidate while ignoring offer, it’s okay to drop
             if (!callState.ignoreOffer) {
               console.error('Error adding ice candidate', err);
             }
@@ -282,70 +322,90 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
       }
 
       case 'user-left': {
-        // remote left: keep our local, clear remote
+        console.log('Remote user left');
         setCallState((s) => ({ ...s, remoteStream: null }));
         break;
       }
 
       default:
+        console.log('Unknown message type:', msg.type);
         break;
     }
   }, [callState.ignoreOffer, callState.isPolite, callState.makingOffer, makeOfferIfNeeded]);
 
   const joinRoom = useCallback(async (email: string, roomId: string) => {
-    emailRef.current = email;
-      roomRef.current = roomId; 
+    setIsConnecting(true);
+    try {
+      console.log(`Joining room ${roomId} as ${email}`);
+      emailRef.current = email;
+      roomRef.current = roomId;
 
-    // Create Peer
-    const pc = createPeer();
+      closeConnections(); // Clean up any existing connections
 
-    // Get media and attach
-    const local = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    local.getTracks().forEach((t) => pc.addTrack(t, local));
-    setCallState((s) => ({ ...s, localStream: local }));
+      const pc = createPeer();
 
-    // Create DataChannel (sender side)
-    const dataChannel = pc.createDataChannel('fileTransfer');
-    wireDataChannel(dataChannel);
+      console.log('Getting user media...');
+      const local = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      local.getTracks().forEach((t) => pc.addTrack(t, local));
+      setCallState((s) => ({ ...s, localStream: local }));
 
-    // Connect signaling
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
+      console.log('Creating data channel...');
+      const dataChannel = pc.createDataChannel('fileTransfer');
+      wireDataChannel(dataChannel);
 
-    ws.onopen = () => {
-      const payload: WebSocketMessage = {
-        type: 'join',
-        roomId,
-        displayName: email,
+      console.log('Connecting to signaling server...');
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('WebSocket connected, joining room...');
+        const payload: WebSocketMessage = {
+          type: 'join',
+          roomId,
+          displayName: email,
+        };
+        ws.send(JSON.stringify(payload));
+        setCallState((s) => ({ ...s, isJoined: true }));
       };
-      ws.send(JSON.stringify(payload));
-      setCallState((s) => ({ ...s, isJoined: true }));
-    };
 
-    ws.onmessage = async (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        await handleSignalMessage(msg);
-      } catch (e) {
-        console.error('Invalid signaling message', e);
-      }
-    };
+      ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+      };
 
-    ws.onclose = () => {
-      // peer may remain; but we mark disconnected states through pc events anyway
-    };
-  }, [createPeer, handleSignalMessage]);
+      ws.onclose = () => {
+        console.log('WebSocket closed');
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          await handleSignalMessage(msg);
+        } catch (e) {
+          console.error('Invalid signaling message', e, event.data);
+        }
+      };
+    } catch (err) {
+      console.error('Error joining room:', err);
+      closeConnections();
+      throw err;
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [closeConnections, createPeer, handleSignalMessage]);
 
   const leaveRoom = useCallback(() => {
+    console.log('Leaving room');
     try {
-      if (wsRef.current && roomRef.current) {
+      if (wsRef.current?.readyState === WebSocket.OPEN && roomRef.current) {
         wsRef.current.send(JSON.stringify({
           type: 'leave',
           roomId: roomRef.current,
           displayName: emailRef.current,
         } as WebSocketMessage));
       }
-    } catch {}
+    } catch (err) {
+      console.error('Error sending leave message:', err);
+    }
     closeConnections();
     setCallState((s) => ({
       ...s,
@@ -359,40 +419,34 @@ const receiveMetaRef = useRef<{ [fileName: string]: { fileSize: number; received
 
   const toggleAudio = useCallback(() => {
     setCallState((s) => {
-      s.localStream?.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
-      return { ...s, isAudioMuted: !s.isAudioMuted };
+      const newMuteState = !s.isAudioMuted;
+      s.localStream?.getAudioTracks().forEach((t) => (t.enabled = newMuteState));
+      return { ...s, isAudioMuted: newMuteState };
     });
   }, []);
 
   const toggleVideo = useCallback(() => {
     setCallState((s) => {
-      s.localStream?.getVideoTracks().forEach((t) => (t.enabled = !t.enabled));
-      return { ...s, isVideoOff: !s.isVideoOff };
+      const newVideoState = !s.isVideoOff;
+      s.localStream?.getVideoTracks().forEach((t) => (t.enabled = newVideoState));
+      return { ...s, isVideoOff: newVideoState };
     });
   }, []);
-const joinCall = async (email: string, roomId: string) => {
-  setIsConnecting(true);
-  try {
-    await joinRoom(email, roomId);   // <- call the actual joinRoom inside
-  } finally {
-    setIsConnecting(false);
-  }
-};
 
-const leaveCall = () => {
-  leaveRoom();
-};
   const sendSingleFile = useCallback(async (file: File) => {
     const dc = dcRef.current;
-    if (!dc || dc.readyState !== 'open') return;
+    if (!dc || dc.readyState !== 'open') {
+      console.error('Data channel not ready for file transfer');
+      return;
+    }
 
-    // Send metadata first
+    console.log('Starting file transfer:', file.name);
     dc.send(JSON.stringify({ __fileMeta: true, fileName: file.name, fileSize: file.size }));
 
     let offset = 0;
     while (offset < file.size) {
-      // flow control: wait if bufferedAmount grows too large
       while (dc.bufferedAmount > 8 * 1024 * 1024) {
+        console.log('Buffered amount high, waiting...');
         await new Promise((r) => setTimeout(r, 10));
       }
 
@@ -405,7 +459,7 @@ const leaveCall = () => {
       setFileProgress((prev) => ({ ...prev, [file.name]: progress }));
     }
 
-    // graceful cleanup after a moment
+    console.log('File transfer complete:', file.name);
     setTimeout(() => {
       setFileProgress((prev) => {
         const { [file.name]: _, ...rest } = prev;
@@ -415,22 +469,20 @@ const leaveCall = () => {
   }, []);
 
   const sendFiles = useCallback((files: FileList) => {
+    console.log('Sending files:', files.length);
     Array.from(files).forEach((f) => sendSingleFile(f));
   }, [sendSingleFile]);
 
-  // keep connection state in sync
   useEffect(() => {
     const i = setInterval(updateConnState, 300);
     return () => clearInterval(i);
   }, [updateConnState]);
 
-  // cleanup on unmount
   useEffect(() => {
     return () => {
       leaveRoom();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [leaveRoom]);
 
   return {
     callState,
@@ -441,5 +493,6 @@ const leaveCall = () => {
     sendFiles,
     fileProgress,
     incomingFiles,
+    isConnecting,
   };
 }
